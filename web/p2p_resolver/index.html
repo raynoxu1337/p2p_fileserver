@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>P2P resolver</title>
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2f6fde">
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #646b7a; --line: #e2e5ea;
+    --accent: #2f6fde; --ok: #1f9d55; --warn: #c98a00; --bad: #c43d3d;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e6e9ef; --muted: #9aa3b2; --line: #2b3240;
+      --accent: #6c9cff; --ok: #3ccf7f; --warn: #e3b341; --bad: #ff7b7b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+  #overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 1rem;
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(4px); z-index: 10; }
+  #card { width: min(30rem, 100%); background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem 1.5rem 1.25rem; box-shadow: 0 10px 40px rgb(0 0 0 / .08); }
+  h1 { font-size: 1.15rem; margin: 0 0 .25rem; display: flex; align-items: center; gap: .6rem; }
+  .spin { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--line);
+    border-top-color: var(--accent); animation: r 0.9s linear infinite; flex: none; }
+  @keyframes r { to { transform: rotate(1turn); } }
+  #server { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted);
+    word-break: break-all; margin: 0 0 1rem; }
+  #steps { list-style: none; padding: 0; margin: 0; color: var(--muted); font-size: .9rem; }
+  #steps li { padding: .15rem 0 .15rem 1.1rem; position: relative; }
+  #steps li::before { content: ""; position: absolute; left: .2rem; top: .7rem; width: .4rem; height: .4rem;
+    border-radius: 50%; background: var(--line); }
+  #steps li:last-child { color: var(--text); }
+  #steps li:last-child::before { background: var(--accent); }
+  #error { margin: 1rem 0 0; padding: .75rem .9rem; border-radius: 10px; color: var(--bad);
+    background: color-mix(in srgb, var(--bad) 10%, transparent); font-size: .92rem; }
+  button, .btn { appearance: none; border: 0; border-radius: 9px; padding: .6rem 1rem; font: inherit;
+    font-weight: 600; background: var(--accent); color: #fff; cursor: pointer; margin-top: 1rem; }
+  form input { width: 100%; padding: .6rem .7rem; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: 13px ui-monospace, Menlo, monospace; margin-top: .75rem; }
+  p.hint { color: var(--muted); font-size: .88rem; margin: .5rem 0 0; }
+  #badge { position: fixed; right: .6rem; bottom: calc(.6rem + env(safe-area-inset-bottom, 0px)); z-index: 5;
+    font-size: .72rem; padding: .2rem .55rem; border-radius: 99px; background: var(--card);
+    border: 1px solid var(--line); color: var(--muted); pointer-events: none; opacity: .85; }
+  #badge::before { content: "●"; margin-right: .35rem; color: var(--bad); }
+  #badge[data-state="ok"]::before { color: var(--ok); }
+  #badge[data-state="warn"]::before { color: var(--warn); }
+  #card.picker .spin { display: none; }
+  #saved { margin: .5rem 0 1rem; }
+  #servers { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+  #servers li { display: flex; align-items: center; gap: .5rem; border: 1px solid var(--line);
+    border-radius: 10px; background: var(--bg); }
+  #servers a { flex: 1; min-width: 0; padding: .6rem .8rem; color: var(--text); text-decoration: none; }
+  #servers a:hover strong { color: var(--accent); }
+  #servers strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #servers small { display: block; color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #servers small code { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #servers button { margin: 0 .5rem 0 0; padding: .35rem .6rem; font-size: .8rem; font-weight: 500;
+    background: transparent; color: var(--muted); border: 1px solid var(--line); flex: none; }
+  #servers button.confirm { color: #fff; background: var(--bad); border-color: var(--bad); }
+  .label { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 .5rem; }
+  #add-label + input { margin-top: 0; }
+  #home { display: inline-block; margin-top: 1rem; font-size: .88rem; color: var(--accent); text-decoration: none; }
+  [hidden] { display: none !important; }
+  #card:has(#error:not([hidden])) .spin { display: none; }
+</style>
+</head>
+<body>
+<iframe id="frame" hidden title="Remote app" allow="fullscreen; clipboard-write"></iframe>
+
+<div id="overlay">
+  <div id="card">
+    <h1><span class="spin"></span><span id="title">Connecting…</span></h1>
+    <p id="server" hidden></p>
+    <ul id="steps"></ul>
+    <div id="error" hidden></div>
+    <button id="retry" type="button" hidden>Retry</button>
+    <div id="saved" hidden>
+      <p class="label">Saved on this device</p>
+      <ul id="servers"></ul>
+    </div>
+    <form id="pick" hidden method="get">
+      <p class="label" id="add-label" hidden>Add a server</p>
+      <input name="server_name" placeholder="12D3KooW…" autocomplete="off" spellcheck="false" required>
+      <p class="hint">Paste the server id (PeerID) of the server you want to open, or just open the link it shares. Servers you connect to are saved here.</p>
+      <button type="submit">Connect</button>
+    </form>
+    <a id="home" href="./" hidden>← All saved servers</a>
+  </div>
+</div>
+
+<div id="badge" data-state="off">Offline</div>
+
+<noscript>This page needs JavaScript to connect to the server.</noscript>
+<script type="module" src="resolver.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Build outputs
+/dist/
+/.build-cache/
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/jniLibs/
+go/p2pnode
+web/node_modules/
+*.apk
+.idea/
+*.iml
+.DS_Store
