@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,24 +7,49 @@ plugins {
 }
 
 android {
-    namespace = "com.raynoxu.p2pfileserver"
+    namespace = "com.raynoxu1337.p2pfileserver"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.raynoxu.p2pfileserver"
+        applicationId = "com.raynoxu1337.p2pfileserver"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
     }
 
+    // Signing key comes from android/keystore.properties (gitignored):
+    //   storeFile=/abs/path/to/key.jks
+    //   storePassword=...
+    //   keyAlias=...
+    //   keyPassword=...
+    // Without that file, both build types fall back to the local debug key so
+    // anyone cloning the repo can still build an installable APK.
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val hasReleaseKey = keystoreProps.getProperty("storeFile") != null
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("raynoxu1337") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+    val appSigning = signingConfigs.getByName(if (hasReleaseKey) "raynoxu1337" else "debug")
+
     buildTypes {
+        debug {
+            signingConfig = appSigning
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideloaded app: sign with the debug key so `assembleRelease` gives an installable APK.
-            // Replace with your own keystore if you publish it anywhere.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = appSigning
         }
     }
 

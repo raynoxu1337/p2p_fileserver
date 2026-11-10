@@ -1,4 +1,4 @@
-module github.com/raynoxu/fileserver-android/p2pnode
+module github.com/raynoxu1337/fileserver-android/p2pnode
 
 go 1.26.0
 

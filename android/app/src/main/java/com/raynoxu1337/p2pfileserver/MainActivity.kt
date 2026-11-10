@@ -1,4 +1,4 @@
-package com.raynoxu.p2pfileserver
+package com.raynoxu1337.p2pfileserver
 
 import android.Manifest
 import android.content.ClipData

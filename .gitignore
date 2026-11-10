@@ -13,3 +13,8 @@ web/node_modules/
 .idea/
 *.iml
 .DS_Store
+
+# Signing (keep out of git)
+android/keystore.properties
+*.jks
+*.keystore

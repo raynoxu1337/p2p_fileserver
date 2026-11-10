@@ -1,4 +1,4 @@
-package com.raynoxu.p2pfileserver
+package com.raynoxu1337.p2pfileserver
 
 import android.annotation.SuppressLint
 import android.app.Notification
