@@ -27,16 +27,18 @@ import (
 )
 
 type config struct {
-	keyPath    string
-	cookiePath string
-	target     *url.URL
-	basePath   string
-	listenPort int
-	dnsServers []string
-	iceServers []iceServer
-	maxPeers   int
-	name       string
-	child      []string
+	keyPath     string
+	cookiePath  string
+	target      *url.URL
+	basePath    string
+	listenPort  int
+	dnsServers  []string
+	iceServers  []iceServer
+	maxSessions int
+	maxPeers    int  // libp2p connection manager high watermark
+	dhtServer   bool // act as a DHT server instead of client only
+	name        string
+	child       []string
 }
 
 func main() {
@@ -51,7 +53,9 @@ func main() {
 		turn     = flag.String("turn", "", "optional TURN server: turn:host:port (or turns:)")
 		turnUser = flag.String("turn-user", "", "TURN username")
 		turnPass = flag.String("turn-pass", "", "TURN credential")
-		maxPeers = flag.Int("max-sessions", 16, "max concurrent browser sessions")
+		maxSess  = flag.Int("max-sessions", 16, "max concurrent browser sessions")
+		maxPeers = flag.Int("max-peers", 120, "soft limit of libp2p peer connections; the node trims back to about a third of it when exceeded")
+		dhtSrv   = flag.Bool("dht-server", false, "act as a DHT server (answer other peers' queries); more traffic, only useful when the node is reachable from the internet. Default is client-only (peer-only mode)")
 		name     = flag.String("name", "", "friendly server name shown in the browser")
 		printID  = flag.Bool("print-id", false, "print the PeerID of the existing -key and exit")
 		genKey   = flag.Bool("gen-key", false, "generate a NEW identity at -key (replacing any existing one, which changes the PeerID), print its PeerID and exit")
@@ -97,15 +101,17 @@ func main() {
 		b += "/"
 	}
 	cfg := config{
-		keyPath:    *keyPath,
-		cookiePath: *cookies,
-		target:     t,
-		basePath:   b,
-		listenPort: *port,
-		dnsServers: splitList(*dns),
-		maxPeers:   *maxPeers,
-		name:       *name,
-		child:      flag.Args(),
+		keyPath:     *keyPath,
+		cookiePath:  *cookies,
+		target:      t,
+		basePath:    b,
+		listenPort:  *port,
+		dnsServers:  splitList(*dns),
+		maxSessions: *maxSess,
+		maxPeers:    *maxPeers,
+		dhtServer:   *dhtSrv,
+		name:        *name,
+		child:       flag.Args(),
 	}
 	if s := splitList(*stun); len(s) > 0 {
 		cfg.iceServers = append(cfg.iceServers, iceServer{URLs: s})
@@ -154,6 +160,7 @@ func run(ctx context.Context, cfg config) error {
 	log.Printf("PeerID %s", node.host.ID())
 
 	go node.maintain(ctx)
+	go node.reportTraffic(ctx)
 	childDone := make(chan struct{})
 	if len(cfg.child) > 0 {
 		go func() {

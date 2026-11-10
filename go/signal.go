@@ -173,7 +173,7 @@ func (s *signaler) handleStream(st network.Stream) {
 		return
 	}
 
-	if s.ActiveSessions() >= s.cfg.maxPeers {
+	if s.ActiveSessions() >= s.cfg.maxSessions {
 		fail(errors.New("server busy: too many sessions"))
 		return
 	}

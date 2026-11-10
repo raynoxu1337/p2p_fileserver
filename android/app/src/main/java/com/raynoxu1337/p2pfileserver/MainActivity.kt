@@ -11,6 +11,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
+import android.os.StatFs
+import android.text.format.Formatter
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -49,6 +51,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -82,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
@@ -225,7 +229,9 @@ private fun Screen(resumeTick: Int) {
                 }
                 if (running && status.phase == Phase.RUNNING) {
                     Text(
-                        "${status.relayAddrs} relay route(s) · ${status.peers} p2p peers · ${status.sessions} visitor(s)",
+                        "${status.relayAddrs} relay route(s) · ${status.peers} p2p peers " +
+                            "(↑ ${size(ctx, status.traffic.fileTx + status.traffic.netTx)} " +
+                            "↓ ${size(ctx, status.traffic.fileRx + status.traffic.netRx)}) · ${status.sessions} visitor(s)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -257,7 +263,6 @@ private fun Screen(resumeTick: Int) {
 
         // Setup checklist
         val todo = buildList {
-            if (prefs.resolverBase.isEmpty()) add("resolver")
             if (!hasStorage(ctx)) add("storage")
             if (!ignoresBatteryOpt(ctx)) add("battery")
             if (!hasNotifications(ctx)) add("notif")
@@ -266,7 +271,6 @@ private fun Screen(resumeTick: Int) {
             Section("Setup") {
                 todo.forEach { t ->
                     when (t) {
-                        "resolver" -> Todo("Set the resolver page address (in Settings below), where you uploaded the p2p_resolver folder.", null) {}
                         "storage" -> Todo("Allow access to files so they can be shared.", "Allow") {
                             if (Build.VERSION.SDK_INT >= 30) openAllFilesAccess(ctx)
                             else storageLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
@@ -285,27 +289,27 @@ private fun Screen(resumeTick: Int) {
             Section("Open from anywhere") {
                 check(edits >= 0)
                 if (peerId.isEmpty()) {
-                    Text("Creating server identity…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Creating invite token…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    Label("Server id")
-                    SelectionContainer { Mono(peerId) }
-                    if (link.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        val qr = remember(link) { QrCode.bitmap(link).asImageBitmap() }
-                        Image(qr, "QR code of the link", Modifier.size(200.dp).align(Alignment.CenterHorizontally))
-                        Spacer(Modifier.height(6.dp))
-                        SelectionContainer { Mono(link) }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                            FilledTonalButton(onClick = { copy(ctx, "link", link) }) { Text("Copy link") }
-                            FilledTonalButton(onClick = {
-                                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link)
-                                ctx.startActivity(Intent.createChooser(send, "Share server link"))
-                            }) { Text("Share") }
-                        }
-                    } else {
-                        Text("Set the resolver page address in Settings to get a shareable link.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Hint("Scan the QR code or open the link in any browser. Then log in with the details below.")
+                    val qr = remember(link) { QrCode.bitmap(link).asImageBitmap() }
+                    Image(qr, "QR code of the link", Modifier.size(200.dp).align(Alignment.CenterHorizontally))
+                    Spacer(Modifier.height(6.dp))
+                    SelectionContainer { Mono(link) }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        FilledTonalButton(onClick = { copy(ctx, "link", link) }) { Text("Copy link") }
+                        FilledTonalButton(onClick = {
+                            val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link)
+                            ctx.startActivity(Intent.createChooser(send, "Share server link"))
+                        }) { Text("Share") }
                     }
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    Label("Invite token")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SelectionContainer(Modifier.weight(1f)) { Mono(peerId) }
+                        TextButton(onClick = { copy(ctx, "invite token", peerId) }) { Text("Copy") }
+                    }
+                    Hint("Already part of the link. Share it on its own when someone opens the resolver page directly.")
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     Label("Login")
                     var show by rememberSaveable { mutableStateOf(false) }
@@ -318,14 +322,22 @@ private fun Screen(resumeTick: Int) {
             }
         }
 
+        // Usage: storage and bandwidth, so heavy traffic or a slow uplink is visible
+        item {
+            Section("Usage") {
+                check(edits >= 0)
+                StorageGauge(prefs.sharedFolder)
+                if (running) {
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    TrafficTable(status.traffic)
+                }
+            }
+        }
+
         // Settings
         item {
             Section("Settings") {
                 check(edits >= 0)
-                Field("Resolver page URL", prefs.resolverUrl, "https://yourname.neocities.org/p2p_resolver/") {
-                    prefs.resolverUrl = it; edits++
-                }
-                Hint("Files are served under ${prefs.webBasePath} on that site; the page must be hosted at the same folder.")
                 Field("Shared folder", prefs.sharedFolder) { prefs.sharedFolder = it; edits++ }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     folderPresets(ctx).forEach { (name, path) ->
@@ -346,6 +358,35 @@ private fun Screen(resumeTick: Int) {
             Section("Advanced", onTitleClick = { open = !open }, collapsed = !open) {
                 check(edits >= 0)
                 if (open) {
+                    Field("Custom resolver page URL", prefs.resolverUrl, Prefs.DEFAULT_RESOLVER) {
+                        prefs.resolverUrl = it; edits++
+                    }
+                    if (prefs.resolverOverrideInvalid) {
+                        Text("Not a valid address, so the default resolver is used.", color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    Hint(
+                        "Leave empty to use the public resolver page. Only set this if you host your own copy of the " +
+                            "p2p_resolver folder. Files are then served under ${prefs.webBasePath}, so the page must be " +
+                            "hosted at that folder. Changing it changes the link."
+                    )
+                    HorizontalDivider(Modifier.padding(bottom = 12.dp))
+                    Field("Max p2p peers", prefs.maxPeers.toString(), keyboard = KeyboardType.Number) {
+                        it.toIntOrNull()?.takeIf { n -> n in Prefs.MAX_PEERS_RANGE }?.let { n -> prefs.maxPeers = n; edits++ }
+                    }
+                    Hint(
+                        "Soft limit (${Prefs.MAX_PEERS_RANGE.first}–${Prefs.MAX_PEERS_RANGE.last}, default ${Prefs.DEFAULT_MAX_PEERS}). " +
+                            "Above it the server drops back to about a third. Lower it on slow or metered internet. " +
+                            "Too low makes the server slower to find."
+                    )
+                    Toggle("Peer-only mode", prefs.peerOnly) { prefs.peerOnly = it; edits++ }
+                    Hint(
+                        if (prefs.peerOnly) "Uses the p2p network as a client only and doesn't answer other peers' lookups. " +
+                            "Recommended for phones."
+                        else "Also answers other peers' lookups (DHT server). Uses noticeably more data and only helps " +
+                            "if this phone is reachable from the internet (public IPv6 or a forwarded port)."
+                    )
+                    HorizontalDivider(Modifier.padding(bottom = 12.dp))
                     Field("P2P port (TCP+UDP)", prefs.p2pPort.toString(), keyboard = KeyboardType.Number) {
                         it.toIntOrNull()?.takeIf { p -> p in 1024..65535 }?.let { p -> prefs.p2pPort = p; edits++ }
                     }
@@ -466,4 +507,73 @@ private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Switch(checked = value, onCheckedChange = onChange)
     }
+}
+
+private fun size(ctx: Context, bytes: Long): String = Formatter.formatShortFileSize(ctx, bytes)
+
+private fun rate(ctx: Context, bytesPerSec: Long): String = size(ctx, bytesPerSec) + "/s"
+
+/** Free space on the volume holding the shared folder, refreshed every few seconds. */
+@Composable
+private fun StorageGauge(folder: String) {
+    val ctx = LocalContext.current
+    var space by remember(folder) { mutableStateOf<Pair<Long, Long>?>(null) } // free, total
+    LaunchedEffect(folder) {
+        while (true) {
+            space = runCatching { StatFs(folder).let { it.availableBytes to it.totalBytes } }.getOrNull()
+            delay(10_000)
+        }
+    }
+    Label("Free storage")
+    val (free, total) = space ?: run {
+        Text("Can't read the shared folder", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    val used = if (total > 0) (total - free).toFloat() / total else 0f
+    val low = total > 0 && free < total / 10
+    LinearProgressIndicator(
+        progress = { used },
+        color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(8.dp),
+        drawStopIndicator = {},
+    )
+    Text(
+        "${size(ctx, free)} free of ${size(ctx, total)}" + if (low) " · almost full" else "",
+        style = MaterialTheme.typography.bodySmall,
+        color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** File-server vs. p2p upkeep traffic: current rate and total since the server started. */
+@Composable
+private fun TrafficTable(t: Traffic) {
+    val ctx = LocalContext.current
+    @Composable
+    fun Cell(up: String, down: String, modifier: Modifier) = Column(modifier) {
+        Mono("↑ $up")
+        Mono("↓ $down")
+    }
+    Row(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.weight(1.1f))
+        Box(Modifier.weight(1f)) { Label("Now") }
+        Box(Modifier.weight(1f)) { Label("Since start") }
+    }
+    listOf(
+        "File server" to listOf(t.fileTxRate, t.fileRxRate, t.fileTx, t.fileRx),
+        "Publishing" to listOf(t.netTxRate, t.netRxRate, t.netTx, t.netRx),
+    ).forEach { (name, v) ->
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, Modifier.weight(1.1f), style = MaterialTheme.typography.bodyMedium)
+            Cell(rate(ctx, v[0]), rate(ctx, v[1]), Modifier.weight(1f))
+            Cell(size(ctx, v[2]), size(ctx, v[3]), Modifier.weight(1f))
+        }
+    }
+    Text(
+        "↑ sent by this phone, ↓ received. File server is what visitors browse, upload and download. " +
+            "Publishing is the upkeep that keeps the server findable on the p2p network.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 10.dp),
+    )
 }

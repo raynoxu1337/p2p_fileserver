@@ -147,14 +147,16 @@ record is `CIDv1(raw, sha256("p2p-http:" + PeerID))`. Neither is a secret.
    - **All files access**, to share folders.
    - **No battery restrictions**, so Android doesn't freeze the server.
    - **Notifications**.
-3. In **Settings**, enter the resolver page URL and pick the folder to share.
+3. In **Settings**, pick the folder to share. The app uses the public resolver page at
+   https://raynoxu1337.github.io/p2p_fileserver/ by default. To use your own copy instead, set it under
+   **Advanced → Custom resolver page URL**.
 4. Tap **Start server**. After 10–60 s the status turns **Online**. It can take another
-   minute or two before a brand-new server ID is findable.
+   minute or two before a brand-new invite token is findable.
 5. Share the link or QR code, together with the login shown in the app. The server identity
-   (the key behind the server ID) is created on first launch. **Advanced → Generate new identity**
+   (the key behind the invite token) is created on first launch. **Advanced → Generate new identity**
    replaces it after a warning. Use it if a link leaked, and note that the old link stops working forever.
    **Advanced → Back up… / Restore…** saves the identity to a passphrase-encrypted file
-   (AES-256-GCM, PBKDF2), so you can keep the same server ID and links on a new phone. The password
+   (AES-256-GCM, PBKDF2), so you can keep the same invite token and links on a new phone. The password
    is generated on first launch, and you can change it.
 
 The phone is a server now, so keep it on a charger and on Wi-Fi.

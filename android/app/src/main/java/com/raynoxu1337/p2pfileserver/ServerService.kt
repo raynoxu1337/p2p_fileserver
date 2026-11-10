@@ -163,9 +163,11 @@ class ServerService : Service() {
             "-target", "http://127.0.0.1:${FilebrowserConfig.PORT}",
             "-base", prefs.webBasePath,
             "-port", prefs.p2pPort.toString(),
+            "-max-peers", prefs.maxPeers.toString(),
             "-name", prefs.serverName,
             "-stdin-watchdog",
         )
+        if (!prefs.peerOnly) args += "-dht-server"
         if (dnsServers.isNotEmpty()) args += listOf("-dns", dnsServers.joinToString(","))
         if (prefs.turnUrl.isNotBlank()) {
             args += listOf("-turn", prefs.turnUrl, "-turn-user", prefs.turnUser, "-turn-pass", prefs.turnPass)
@@ -202,6 +204,16 @@ class ServerService : Service() {
                 )
             }
             "session" -> ServerState.update { it.copy(sessions = j.optInt("active")) }
+            "traffic" -> ServerState.update {
+                it.copy(
+                    traffic = Traffic(
+                        fileRx = j.optLong("fileRx"), fileTx = j.optLong("fileTx"),
+                        fileRxRate = j.optLong("fileRxRate"), fileTxRate = j.optLong("fileTxRate"),
+                        netRx = j.optLong("netRx"), netTx = j.optLong("netTx"),
+                        netRxRate = j.optLong("netRxRate"), netTxRate = j.optLong("netTxRate"),
+                    ),
+                )
+            }
             "backend" -> {
                 val st = j.optString("state")
                 ServerState.update { it.copy(backendUp = st == "up") }
@@ -358,7 +370,7 @@ class ServerService : Service() {
         /** Settings that require a restart when changed. */
         fun configFingerprint(p: Prefs) = listOf(
             p.sharedFolder, p.webBasePath, p.serverName, p.adminUser, p.adminPassword, p.readOnly,
-            p.p2pPort, p.turnUrl, p.turnUser, p.turnPass,
+            p.p2pPort, p.maxPeers, p.peerOnly, p.turnUrl, p.turnUser, p.turnPass,
         ).joinToString("\u0000")
     }
 }

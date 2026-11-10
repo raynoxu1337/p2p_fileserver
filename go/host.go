@@ -20,6 +20,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
@@ -45,6 +46,10 @@ type node struct {
 	host host.Host
 	dht  *dht.IpfsDHT
 	cfg  config
+	// bw counts all libp2p traffic: DHT, relays, identify, signaling. This
+	// is the upkeep of being findable; file transfers run over WebRTC and
+	// are counted separately (see traffic.go).
+	bw *metrics.BandwidthCounter
 
 	mu         sync.Mutex
 	relayAddrs []ma.Multiaddr
@@ -107,7 +112,7 @@ func newNode(ctx context.Context, cfg config) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := &node{cfg: cfg}
+	n := &node{cfg: cfg, bw: metrics.NewBandwidthCounter()}
 
 	p := cfg.listenPort
 	listen := []string{
@@ -121,7 +126,8 @@ func newNode(ctx context.Context, cfg config) (*node, error) {
 		fmt.Sprintf("/ip6/::/udp/%d/webrtc-direct", p),
 	}
 
-	cm, err := connmgr.NewConnManager(40, 120, connmgr.WithGracePeriod(time.Minute))
+	high := max(cfg.maxPeers, 10)
+	cm, err := connmgr.NewConnManager(max(high/3, 4), high, connmgr.WithGracePeriod(time.Minute))
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +142,7 @@ func newNode(ctx context.Context, cfg config) (*node, error) {
 		libp2p.DefaultSecurity,
 		libp2p.DefaultMuxers,
 		libp2p.ConnectionManager(cm),
+		libp2p.BandwidthReporter(n.bw),
 		libp2p.NATPortMap(),
 		libp2p.EnableHolePunching(),
 		libp2p.EnableRelay(),
@@ -165,8 +172,15 @@ func newNode(ctx context.Context, cfg config) (*node, error) {
 	hostRef = h
 	n.host = h
 
+	// Client mode ("peer-only") by default: phones are behind NAT and on
+	// metered links, so answering other peers' DHT queries costs data and
+	// mostly fails anyway. -dht-server opts in when the node is reachable.
+	mode := dht.ModeClient
+	if cfg.dhtServer {
+		mode = dht.ModeServer
+	}
 	d, err := dht.New(h,
-		dht.Mode(dht.ModeClient),
+		dht.Mode(mode),
 		dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
 	)
 	if err != nil {

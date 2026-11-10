@@ -21,6 +21,19 @@ data class Status(
     val backendUp: Boolean = false,
     val error: String? = null,
     val runningConfig: String = "",
+    val traffic: Traffic = Traffic(),
+)
+
+/**
+ * Bytes since the node started and current rates (bytes/s), from the node's
+ * "traffic" event. Rx = received by this phone, Tx = sent by it.
+ * file* is visitors' HTTP traffic; net* is libp2p upkeep (DHT, relays, signaling).
+ */
+data class Traffic(
+    val fileRx: Long = 0, val fileTx: Long = 0,
+    val fileRxRate: Long = 0, val fileTxRate: Long = 0,
+    val netRx: Long = 0, val netTx: Long = 0,
+    val netRxRate: Long = 0, val netTxRate: Long = 0,
 )
 
 /** Process-wide state shared by the service and the UI. */

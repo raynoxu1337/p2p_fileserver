@@ -105,6 +105,7 @@ func (ex *exchange) notify() {
 // onMessage runs on the channel's read goroutine; blocking here (writing the
 // request body into the pipe) back-pressures the browser via SCTP.
 func (ex *exchange) onMessage(m webrtc.DataChannelMessage) {
+	fileRx.Add(int64(len(m.Data)))
 	if !ex.started {
 		if !m.IsString || len(m.Data) > maxHeadSize {
 			ex.dc.Close()
@@ -227,6 +228,7 @@ func (ex *exchange) do(h reqHead, body io.Reader) {
 	if err := ex.dc.SendText(string(hb)); err != nil {
 		return
 	}
+	fileTx.Add(int64(len(hb)))
 
 	var sent int64
 	buf := make([]byte, chunkSize)
@@ -240,6 +242,7 @@ func (ex *exchange) do(h reqHead, body io.Reader) {
 				return
 			}
 			sent += int64(n)
+			fileTx.Add(int64(n))
 		}
 		if rerr == io.EOF {
 			break

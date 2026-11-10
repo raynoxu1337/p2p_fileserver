@@ -106,7 +106,7 @@ fun IdentityTools(running: Boolean, currentId: String, onChanged: () -> Unit) {
 
     Column {
         Label("Server identity")
-        Hint("Generated on this phone on first run and stored only in the app's private storage. The server id in your link is derived from it. Back it up to keep the same id on a new phone.")
+        Hint("Generated on this phone on first run and stored only in the app's private storage. The invite token in your link is derived from it. Back it up to keep the same invite token on a new phone.")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
             FilledTonalButton(enabled = busy == null, onClick = { dialog = IdDialog.BACKUP_PASS }) { Text("Back up…") }
             FilledTonalButton(enabled = busy == null, onClick = { openDoc.launch(arrayOf("*/*")) }) { Text("Restore…") }
@@ -127,7 +127,7 @@ fun IdentityTools(running: Boolean, currentId: String, onChanged: () -> Unit) {
             title = { Text("Generate a new identity?") },
             text = {
                 Text(
-                    "This permanently replaces the server's key and gives it a new server id.\n\n" +
+                    "This permanently replaces the server's key and gives it a new invite token.\n\n" +
                         "• The current link and QR code stop working for good. Everyone you shared them with needs the new link.\n" +
                         "• Open visitor sessions are disconnected" + (if (running) " and the server restarts." else ".") + "\n" +
                         "• This can't be undone unless you have a backup of the current identity.\n\n" +
@@ -154,7 +154,7 @@ fun IdentityTools(running: Boolean, currentId: String, onChanged: () -> Unit) {
         IdDialog.BACKUP_PASS -> PassphraseDialog(
             title = "Back up identity",
             text = "The backup is encrypted with this passphrase. Anyone who has both the file and the passphrase " +
-                "can run a server with your server id, so keep them apart and safe. There is no way to recover a " +
+                "can run a server with your invite token, so keep them apart and safe. There is no way to recover a " +
                 "forgotten passphrase.",
             confirmLabel = "Choose file…",
             repeat = true,
@@ -200,8 +200,8 @@ fun IdentityTools(running: Boolean, currentId: String, onChanged: () -> Unit) {
             title = { Text("Switch to the restored identity?") },
             text = {
                 Text(
-                    "Backup server id:\n${short(restoreId)}\n\nCurrent server id:\n${short(currentId)}\n\n" +
-                        "The server will use the backup's id, so links made with it work again. The current " +
+                    "Backup invite token:\n${short(restoreId)}\n\nCurrent invite token:\n${short(currentId)}\n\n" +
+                        "The server will use the backup's invite token, so links made with it work again. The current " +
                         "identity is deleted; its link stops working unless you backed it up." +
                         (if (running) "\n\nThe server restarts." else "")
                 )
