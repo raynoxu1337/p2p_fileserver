@@ -8,6 +8,9 @@ Turn your old android phone into a self-hosted server with no static IP or TLD n
 * You will get a QR code, a link and a token. you can use the link, QR normally or paste the token into [Resolver Website](https://raynoxu1337.github.io/p2p_fileserver/).
 * Login with your credentials in the login page, when loged in you can add manage files, add other users or create shareable links just like in cloud storage solutions.
 * Imagine the server token (or qr/link) is just an invite link to KNOW that the server exists, QR/link/token does not give access to files, you need to create your friends an account from your admin panel once you are logged in yourself. For more info look [here](https://github.com/gtsteffaniak/filebrowser), but the UI is quite manageable to figure out.
+* On your browser you can "install" the fileserver access page as a webapp to your desktop.
+
+🥀💀🪦 DO NOT FORGET TO LOGOUT IF YOU LOGIN ON PUBLIC PC LIKE A LIBRARY, ETC OR USE ICOGNITO❗
 
 DISCLAIMER:
 This android wrapper was vibecoded with Claude, tho all the components are battletested and this is just a trivial glue code so I don't expect many issues here. All the expected things work and theres not much that can go wrong here IMO.

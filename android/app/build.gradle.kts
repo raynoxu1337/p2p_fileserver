@@ -14,8 +14,8 @@ android {
         applicationId = "com.raynoxu1337.p2pfileserver"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     // Signing key comes from android/keystore.properties (gitignored):

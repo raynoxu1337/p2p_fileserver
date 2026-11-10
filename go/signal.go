@@ -46,7 +46,7 @@ type iceServer struct {
 
 // Signaling messages (length-prefixed JSON, unsigned varint prefix):
 //
-//	browser → {"type":"hello","v":1,"client":"<random id>","base":"<page folder, e.g. /p2p_resolver/>"}
+//	browser → {"type":"hello","v":1,"client":"<random id>","base":"<page folder, e.g. /p2p_resolver/>","remember":false}
 //	server  → {"type":"config","v":1,"base":"<path the app is served under>","iceServers":[...],"name":"...",
 //	           "addrs":["<multiaddr>",...]}
 //	browser → {"type":"offer","sdp":"..."}      (complete, non-trickle ICE)
@@ -70,6 +70,9 @@ type sigMsg struct {
 	Name       string      `json:"name,omitempty"`
 	Addrs      []string    `json:"addrs,omitempty"`
 	Error      string      `json:"error,omitempty"`
+	// Remember (hello) is true when the visitor ticked "Remember me on this
+	// device"; otherwise their cookies are kept only briefly (cookies.go).
+	Remember bool `json:"remember,omitempty"`
 }
 
 type signaler struct {
@@ -177,7 +180,7 @@ func (s *signaler) handleStream(st network.Stream) {
 		fail(errors.New("server busy: too many sessions"))
 		return
 	}
-	pc, answer, err := s.newSession(hello.Client, offer.SDP)
+	pc, answer, err := s.newSession(hello.Client, hello.Remember, offer.SDP)
 	if err != nil {
 		fail(err)
 		return
@@ -189,7 +192,7 @@ func (s *signaler) handleStream(st network.Stream) {
 	log.Printf("session from %s (via %s)", remote.ShortString(), st.Conn().RemoteMultiaddr())
 }
 
-func (s *signaler) newSession(client, offerSDP string) (*webrtc.PeerConnection, string, error) {
+func (s *signaler) newSession(client string, remember bool, offerSDP string) (*webrtc.PeerConnection, string, error) {
 	var ice []webrtc.ICEServer
 	for _, is := range s.cfg.iceServers {
 		ice = append(ice, webrtc.ICEServer{URLs: is.URLs, Username: is.Username, Credential: is.Credential})
@@ -203,7 +206,7 @@ func (s *signaler) newSession(client, offerSDP string) (*webrtc.PeerConnection, 
 	s.mu.Unlock()
 	emit("session", map[string]any{"active": s.ActiveSessions()})
 
-	sess := &session{s: s, jar: s.cookies.jar(client), ctx: context.Background()}
+	sess := &session{s: s, jar: s.cookies.jar(client, remember), ctx: context.Background()}
 	var cancel context.CancelFunc
 	sess.ctx, cancel = context.WithCancel(context.Background())
 

@@ -137,7 +137,7 @@ export async function dialServer (node, peerId, addrStrings, { signal, log, rela
  * Run signaling over the libp2p connection and return a connected
  * RTCPeerConnection plus the server's config.
  */
-export async function negotiate (conn, { clientId, base, log, signal, viaRelay = false }) {
+export async function negotiate (conn, { clientId, remember = false, base, log, signal, viaRelay = false }) {
   let stream
   try {
     stream = await conn.newStream(SIGNAL_PROTOCOL, { runOnLimitedConnection: true, signal })
@@ -157,7 +157,9 @@ export async function negotiate (conn, { clientId, base, log, signal, viaRelay =
     return m
   }
 
-  await send({ type: 'hello', v: PROTOCOL_VERSION, client: clientId, base })
+  // remember: the visitor ticked "Remember me on this device"; otherwise the
+  // server keeps their login cookies only briefly.
+  await send({ type: 'hello', v: PROTOCOL_VERSION, client: clientId, base, remember })
   let cfg
   try {
     cfg = await recv()

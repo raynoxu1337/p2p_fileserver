@@ -35,7 +35,11 @@ const ui = {
   saved: $('saved'),
   servers: $('servers'),
   addLabel: $('add-label'),
-  home: $('home')
+  home: $('home'),
+  remember: $('remember'),
+  device: $('device'),
+  deviceRemember: $('device-remember'),
+  forget: $('forget')
 }
 
 let pc = null
@@ -43,13 +47,78 @@ let connecting = false
 let retryTimer = null
 let attempt = 0
 
+// --- What this browser keeps -------------------------------------------
+// By default nothing outlives the tab: the client id (the key to this
+// visitor's login cookies, which the server holds), the saved servers and
+// the remembered addresses all live in sessionStorage. Only when the visitor
+// ticks "Remember me on this device" do they move to localStorage. So on a
+// shared or public computer, closing the tab is enough to log out and leave
+// no trace of the server.
+
+const REMEMBER_KEY = 'p2p-remember'
+const CLIENT_KEY = 'p2p-client-id'
+const ourKey = (k) => k === CLIENT_KEY || k === SERVERS_KEY || k.startsWith('p2p-local-addrs:') || k.startsWith('p2p-relay-addrs:')
+
+function isRemembered () {
+  try { return localStorage.getItem(REMEMBER_KEY) === '1' } catch { return false }
+}
+
+/** Storage for our keys, or null if the browser blocks storage. */
+function store () {
+  try { return isRemembered() ? localStorage : sessionStorage } catch { return null }
+}
+
+function eachOurKey (s, f) {
+  try { for (const k of Object.keys(s)) if (ourKey(k)) f(k) } catch {}
+}
+
+// Earlier versions kept everything in localStorage unconditionally. Data
+// there without the remember flag was never opted in: drop it.
+function dropUnrememberedData () {
+  try { if (!isRemembered()) eachOurKey(localStorage, k => localStorage.removeItem(k)) } catch {}
+}
+
+/** Move our data between tab-only and device storage, keeping this visit's login. */
+function setRemember (on) {
+  if (on === isRemembered()) return
+  try {
+    const [from, to] = on ? [sessionStorage, localStorage] : [localStorage, sessionStorage]
+    eachOurKey(from, k => { to.setItem(k, from.getItem(k)); from.removeItem(k) })
+    if (on) localStorage.setItem(REMEMBER_KEY, '1')
+    else localStorage.removeItem(REMEMBER_KEY)
+  } catch {}
+  renderRemember()
+}
+
+/** Wipe everything this page stored in this browser and start over. */
+function forgetDevice () {
+  try {
+    for (const s of [localStorage, sessionStorage]) {
+      eachOurKey(s, k => s.removeItem(k))
+      s.removeItem(REMEMBER_KEY)
+    }
+  } catch {}
+  memClientId = null
+  if (pc) { const p = pc; pc = null; p.close() }
+  location.replace(DIR)
+}
+
+function renderRemember () {
+  const on = isRemembered()
+  ui.remember.checked = on
+  ui.deviceRemember.checked = on
+}
+
+let memClientId = null // fallback when storage is blocked
+
 function clientId () {
   const fresh = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('')
+  const s = store()
   try {
-    let id = localStorage.getItem('p2p-client-id')
-    if (!id) { id = fresh(); localStorage.setItem('p2p-client-id', id) }
-    return id
-  } catch { return fresh() }
+    let id = s?.getItem(CLIENT_KEY)
+    if (!id) { id = memClientId || fresh(); s?.setItem(CLIENT_KEY, id) }
+    return (memClientId = id)
+  } catch { return (memClientId ||= fresh()) }
 }
 
 // --- Saved servers ---------------------------------------------------------
@@ -57,19 +126,20 @@ function clientId () {
 // the name it reported), so later visits can just pick it from a list. The
 // PeerID *is* the server's public key, and the connection is authenticated
 // against it, so a saved entry always reaches the same server: the name is
-// only a label. Stored in this browser only.
+// only a label. Stored in this browser only, and only for this tab unless
+// the visitor chose "Remember me on this device".
 
 const SERVERS_KEY = 'p2p-servers'
 
 function savedServers () {
   try {
-    const list = JSON.parse(localStorage.getItem(SERVERS_KEY) || '[]')
+    const list = JSON.parse(store()?.getItem(SERVERS_KEY) || '[]')
     return Array.isArray(list) ? list.filter(s => s && typeof s.id === 'string') : []
   } catch { return [] }
 }
 
 function writeServers (list) {
-  try { localStorage.setItem(SERVERS_KEY, JSON.stringify(list)) } catch {}
+  try { store()?.setItem(SERVERS_KEY, JSON.stringify(list)) } catch {}
 }
 
 function saveServer (id, name) {
@@ -81,7 +151,7 @@ function saveServer (id, name) {
 
 function forgetServer (id) {
   writeServers(savedServers().filter(s => s.id !== id))
-  try { localStorage.removeItem(ADDR_KEY(id)); localStorage.removeItem(RELAY_KEY(id)) } catch {}
+  try { store()?.removeItem(ADDR_KEY(id)); store()?.removeItem(RELAY_KEY(id)) } catch {}
 }
 
 function ago (t) {
@@ -142,7 +212,7 @@ function renderPicker () {
 // The server tells us its direct addresses during signaling; the public DHT
 // never returns private (LAN) ones. Remember those per server so the next
 // visit from the same network connects straight away. Stored only in this
-// browser, never sent anywhere.
+// browser (see store()), never sent anywhere.
 
 const ADDR_KEY = (id) => 'p2p-local-addrs:' + id
 const ADDR_TTL = 30 * 24 * 3600 * 1000
@@ -165,7 +235,7 @@ function localRank (a) {
 
 function rememberedAddrs (id) {
   try {
-    const e = JSON.parse(localStorage.getItem(ADDR_KEY(id)) || 'null')
+    const e = JSON.parse(store()?.getItem(ADDR_KEY(id)) || 'null')
     if (!e || Date.now() - e.t > ADDR_TTL || !Array.isArray(e.addrs)) return []
     return e.addrs.filter(a => typeof a === 'string')
   } catch { return [] }
@@ -179,8 +249,8 @@ function rememberAddrs (id, addrs) {
     .sort((a, b) => localRank(a) - localRank(b))
     .slice(0, MAX_REMEMBERED)
   try {
-    if (local.length) localStorage.setItem(ADDR_KEY(id), JSON.stringify({ t: Date.now(), addrs: local }))
-    else localStorage.removeItem(ADDR_KEY(id))
+    if (local.length) store()?.setItem(ADDR_KEY(id), JSON.stringify({ t: Date.now(), addrs: local }))
+    else store()?.removeItem(ADDR_KEY(id))
   } catch {}
 }
 
@@ -192,7 +262,7 @@ const MAX_RELAYS = 8
 
 function rememberedRelays (id) {
   try {
-    const e = JSON.parse(localStorage.getItem(RELAY_KEY(id)) || 'null')
+    const e = JSON.parse(store()?.getItem(RELAY_KEY(id)) || 'null')
     if (!e || Date.now() - e.t > RELAY_TTL || !Array.isArray(e.addrs)) return []
     return e.addrs.filter(a => typeof a === 'string' && a.includes('/p2p-circuit'))
   } catch { return [] }
@@ -204,7 +274,7 @@ function rememberRelays (id, addrs) {
   const relays = (addrs || []).filter(a => typeof a === 'string' && a.includes('/p2p-circuit'))
     .sort((a, b) => rank(a) - rank(b)).slice(0, MAX_RELAYS)
   try {
-    if (relays.length) localStorage.setItem(RELAY_KEY(id), JSON.stringify({ t: Date.now(), addrs: relays }))
+    if (relays.length) store()?.setItem(RELAY_KEY(id), JSON.stringify({ t: Date.now(), addrs: relays }))
   } catch {}
 }
 
@@ -310,7 +380,7 @@ async function connect () {
       dialed = await dialServer(node, serverName, addrs, { log, relayOnly, signal: dialSignal })
     }
     const { conn, viaRelay } = dialed
-    const res = await negotiate(conn, { clientId: clientId(), base: DIR, log, viaRelay, signal: AbortSignal.timeout(60000) })
+    const res = await negotiate(conn, { clientId: clientId(), remember: isRemembered(), base: DIR, log, viaRelay, signal: AbortSignal.timeout(60000) })
     const base = res.config.base || ''
     if (!base.startsWith(DIR) || base === DIR || !base.endsWith('/') || OWN_FILES.has(base.slice(DIR.length, -1))) {
       res.pc.close()
@@ -388,7 +458,27 @@ function openFrame () {
 
 // --- Boot ----------------------------------------------------------------
 
+function setupDeviceControls () {
+  dropUnrememberedData()
+  renderRemember()
+  ui.remember.addEventListener('change', () => setRemember(ui.remember.checked))
+  ui.deviceRemember.addEventListener('change', () => setRemember(ui.deviceRemember.checked))
+  ui.badge.addEventListener('click', () => { ui.device.hidden = !ui.device.hidden })
+  let armed = null
+  ui.forget.addEventListener('click', () => {
+    if (!armed) {
+      ui.forget.textContent = 'Click again to confirm'
+      armed = setTimeout(() => { armed = null; ui.forget.textContent = 'Forget this device' }, 3000)
+      return
+    }
+    forgetDevice()
+  })
+  // Another tab changing the choice (or forgetting) updates this one.
+  addEventListener('storage', (e) => { if (e.key === REMEMBER_KEY || e.key === null) renderRemember() })
+}
+
 async function main () {
+  setupDeviceControls()
   ui.retry.addEventListener('click', () => connect())
   if (!serverName) {
     renderPicker()

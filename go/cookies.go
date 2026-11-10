@@ -19,7 +19,7 @@ import (
 //
 // A Service Worker can't read or set cookies (and session cookies are usually
 // HttpOnly anyway), so the node holds them, keyed by a random client id the
-// page keeps in localStorage. With a path set they are saved to disk, so
+// page keeps in browser storage. With a path set they are saved to disk, so
 // visitors stay logged in across node restarts (network changes, app
 // restarts, reboots); without one they live in memory only.
 //
@@ -34,10 +34,16 @@ type cookieStore struct {
 }
 
 const (
-	maxClients    = 256
-	maxCookies    = 64 // per client
+	maxClients = 256
+	maxCookies = 64 // per client
+	// Browsers where the visitor ticked "Remember me" keep their cookies for
+	// this long after their last request.
 	clientIdleTTL = 60 * 24 * time.Hour
-	saveDelay     = 2 * time.Second
+	// Other browsers keep the client id only for the life of the tab
+	// (sessionStorage), so their cookies are dropped much sooner. Still long
+	// enough to survive node restarts (network switches) during a visit.
+	ephemeralIdleTTL = 12 * time.Hour
+	saveDelay        = 2 * time.Second
 )
 
 type storedCookie struct {
@@ -52,6 +58,16 @@ type clientJar struct {
 	store    *cookieStore
 	List     []storedCookie `json:"cookies"`
 	LastUsed time.Time      `json:"lastUsed"`
+	// Remember is set when the browser asked to be remembered on its device.
+	// Jars saved by older versions lack it and get the short TTL.
+	Remember bool `json:"remember,omitempty"`
+}
+
+func (j *clientJar) ttl() time.Duration {
+	if j.Remember {
+		return clientIdleTTL
+	}
+	return ephemeralIdleTTL
 }
 
 func newCookieStore(path string) *cookieStore {
@@ -73,7 +89,7 @@ func newCookieStore(path string) *cookieStore {
 	}
 	now := time.Now()
 	for id, j := range saved {
-		if j == nil || now.Sub(j.LastUsed) > clientIdleTTL {
+		if j == nil || now.Sub(j.LastUsed) > j.ttl() {
 			continue
 		}
 		j.store = cs
@@ -87,9 +103,12 @@ func newCookieStore(path string) *cookieStore {
 }
 
 // jar returns the cookie jar for one browser, creating it if needed.
-func (cs *cookieStore) jar(client string) http.CookieJar {
+// remember is what the browser reported for this visit; it sets how long the
+// jar outlives the browser's last request.
+func (cs *cookieStore) jar(client string, remember bool) http.CookieJar {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+	cs.sweep(time.Now())
 	j, ok := cs.clients[client]
 	if !ok {
 		if len(cs.clients) >= maxClients {
@@ -104,8 +123,26 @@ func (cs *cookieStore) jar(client string) http.CookieJar {
 		j = &clientJar{store: cs}
 		cs.clients[client] = j
 	}
+	if j.Remember != remember {
+		j.Remember = remember
+		cs.scheduleSave()
+	}
 	j.LastUsed = time.Now()
 	return j
+}
+
+// sweep drops jars idle for longer than their TTL. cs.mu held.
+func (cs *cookieStore) sweep(now time.Time) {
+	changed := false
+	for id, j := range cs.clients {
+		if now.Sub(j.LastUsed) > j.ttl() {
+			delete(cs.clients, id)
+			changed = true
+		}
+	}
+	if changed {
+		cs.scheduleSave()
+	}
 }
 
 func (j *clientJar) SetCookies(u *url.URL, cookies []*http.Cookie) {

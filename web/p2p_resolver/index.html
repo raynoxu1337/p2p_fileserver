@@ -50,8 +50,16 @@
     background: var(--bg); color: var(--text); font: 13px ui-monospace, Menlo, monospace; margin-top: .75rem; }
   p.hint { color: var(--muted); font-size: .88rem; margin: .5rem 0 0; }
   #badge { position: fixed; right: .6rem; bottom: calc(.6rem + env(safe-area-inset-bottom, 0px)); z-index: 5;
-    font-size: .72rem; padding: .2rem .55rem; border-radius: 99px; background: var(--card);
-    border: 1px solid var(--line); color: var(--muted); pointer-events: none; opacity: .85; }
+    font: inherit; font-size: .72rem; font-weight: 400; margin: 0; padding: .2rem .55rem; border-radius: 99px;
+    background: var(--card); border: 1px solid var(--line); color: var(--muted); opacity: .85; cursor: pointer; }
+  #badge:hover { opacity: 1; }
+  .remember { display: flex; gap: .5rem; align-items: flex-start; margin-top: 1rem; font-size: .9rem; cursor: pointer; }
+  .remember input { margin: .2rem 0 0; accent-color: var(--accent); flex: none; }
+  .remember small { display: block; color: var(--muted); font-size: .8rem; }
+  #device { position: fixed; right: .6rem; bottom: calc(2.4rem + env(safe-area-inset-bottom, 0px)); z-index: 6;
+    width: min(20rem, calc(100% - 1.2rem)); background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: .25rem 1rem 1rem; box-shadow: 0 10px 40px rgb(0 0 0 / .15); }
+  #forget { background: transparent; color: var(--bad); border: 1px solid var(--line); font-weight: 500; font-size: .85rem; }
   #badge::before { content: "●"; margin-right: .35rem; color: var(--bad); }
   #badge[data-state="ok"]::before { color: var(--ok); }
   #badge[data-state="warn"]::before { color: var(--warn); }
@@ -92,14 +100,24 @@
     <form id="pick" hidden method="get">
       <p class="label" id="add-label" hidden>Add a server</p>
       <input name="server_name" placeholder="12D3KooW…" autocomplete="off" spellcheck="false" required>
-      <p class="hint">Paste the token of the server you want to open, or just open the link it shares. Servers you connect to are saved here.</p>
+      <p class="hint">Paste the token of the server you want to open, or just open the link it shares. Servers you connect to are listed here if you choose to be remembered.</p>
       <button type="submit">Connect</button>
     </form>
+    <label class="remember"><input type="checkbox" id="remember">
+      <span>Remember me on this device<small>Only on your own devices. Otherwise you are logged out and this server
+        is forgotten when you close the tab.</small></span></label>
     <a id="home" href="./" hidden>← All saved servers</a>
   </div>
 </div>
 
-<div id="badge" data-state="off">Offline</div>
+<div id="device" hidden>
+  <label class="remember"><input type="checkbox" id="device-remember">
+    <span>Remember me on this device<small>Keeps your login and this server after you close the tab. Only on your
+      own devices.</small></span></label>
+  <button id="forget" type="button">Forget this device</button>
+  <p class="hint">Disconnects and removes everything this page stored in this browser.</p>
+</div>
+<button id="badge" type="button" data-state="off" title="Connection and device settings">Offline</button>
 
 <noscript>This page needs JavaScript to connect to the server.</noscript>
 <script type="module" src="resolver.js"></script>
