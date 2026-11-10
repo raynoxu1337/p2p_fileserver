@@ -114,8 +114,9 @@ scripts/build-apk.sh arm64-v8a    # only 64-bit ARM (most phones from 2017 on)
 Both end up in `android/app/src/main/jniLibs/<abi>/`. Android only allows
 apps to execute files from their native library directory, so the binaries are named `lib*.so`.
 
-Release APKs are signed with the debug key so they install directly. Use your own
-keystore if you distribute them more widely.
+To sign with your own key, create `android/keystore.properties` (gitignored) with
+`storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Without it, debug and release
+APKs are signed with your local Android debug key, so they still install directly.
 
 ## Host the resolver page
 
@@ -189,3 +190,4 @@ The phone is a server now, so keep it on a charger and on Wi-Fi.
 - **Browsers:** the page needs Service Workers, which Firefox disables in private windows.
 - **Login rate limit:** every request reaches filebrowser from `127.0.0.1`, so its failed-login lockout
   applies to all visitors at once.
+# p2p_fileserver
